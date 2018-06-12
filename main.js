@@ -1,85 +1,224 @@
-function start() {
 
-	var glLoop = function() {
+var glCloseFlag = false;
 
-		var gl = document.getElementById("glcanv").getContext("webgl");
+function glClose() {
+    glCloseFlag = true;
+}
 
-		var prg = webglUtils.createProgramFromScripts(gl, [ "main-vs",
-				"main-fs" ], undefined, undefined, function(msg) {
-			alert(msg);
-		});
-		var prgCoordsLoc = gl.getAttribLocation(prg, "coords");
-		var prgInColorLoc = gl.getUniformLocation(prg, "in_color");
+function glLoop() {
 
-		var vertices = [ -0.5, -0.5, 0, 0.5, 0.5, -0.5, 0, -0.2 ];
-		var indices = [ 0, 1, 3, 2 ];
+    var width = 800;
+    var height = 480;
+    
+    var glCanvasElement = document.createElement("canvas")
+    glCanvasElement.setAttribute("width", width);
+    glCanvasElement.setAttribute("height", height);
 
-		var vertexbuff = gl.createBuffer();
-		var indexbuff = gl.createBuffer();
-		gl.bindBuffer(gl.ARRAY_BUFFER, vertexbuff);
-		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexbuff);
-		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices),gl.STATIC_DRAW);
-		gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices),gl.STATIC_DRAW);
+    var bodyElement = document.getElementsByTagName("body")[0];
+    bodyElement.insertBefore(glCanvasElement, bodyElement.childNodes[0]);
+    
+    
+    var projection = new Float32Array(
+        Matrices.perspective(
+            Math.PI / 180 * 45,
+            width / height,
+            0.1,
+            1500
+    ));
 
-		var color = 0.0;
-		var delta = 0.0025;
 
-		var drawScene = function(time) {
+    var gl = glCanvasElement.getContext("webgl");
 
-			color += delta;
-			if (color < 0) {
-				color = 0.0;
-				delta *= -1;
-			} else if (color > 1) {
-				color = 1.0;
-				delta *= -1;
-			}
+    var skybox = new Skybox(gl, projection, "tex:daylight");
 
-			gl.uniform1fv(prgInColorLoc,  [ color ]);
+    var terrainShader = new TerrainShader(gl, projection);
+    var terrainGrassTexture = gl.createTexture2DFromImageElement("tex:terrain:grass");
+    var terrainGroundTexture = gl.createTexture2DFromImageElement("tex:terrain:ground");
 
-			gl.vertexAttribPointer(prgCoordsLoc, 2, gl.FLOAT, false, 0, 0);
-			gl.enableVertexAttribArray(prgCoordsLoc);
-			gl.useProgram(prg);
+    var terrainSize = 128;
+    var terrainStrech = 2;
+    var terrainAmplitude = 16;
+    
+    
+    function terrainOctave(size, octave, amplitudes, seedBaseX, seedBaseZ, heightMap) {
+        
+        if(heightMap == undefined) {
+            heightMap = arrayOfArrays(size, true);
+        }
+        if(seedBaseX == undefined) {
+            seedBaseX = 0;
+        }
+        if(seedBaseZ == undefined) {
+            seedBaseZ = 0;
+        }
+        if(octave < 0) {
+            return heightMap;
+        }
+        
+        var amplitude = amplitudes[octave];
+        if(amplitude == 0) {
+            return terrainOctave(size, octave - 1, amplitudes, seedBaseX, seedBaseZ, heightMap);
+        }
 
-			gl.enable(gl.DEPHT_TEST);
-			gl.clearColor(0, 0, 0, 1);
-			gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPHT_BUFFER_BIT);
+        var stride = Math.pow(2, octave);
+        var count = size / stride;
+        
+        var bx = seedBaseX;
+        var bz = seedBaseZ;
 
-			gl.drawElements(gl.TRIANGLE_STRIP, indices.length, gl.UNSIGNED_SHORT, 0);
+        var ohm = arrayOfArrays(count + 1, false);
+        for(var x = 0; x < count + 1; x++) {
+            for(var z = 0; z < count + 1; z++) {
+                ohm[x][z] = smoothNoise(bx + x, bz + z) * amplitude;
+            }
+        }
+        
+        for(var x = 0; x < size; x++) {
+            var xs = x / stride;
+            var xo = Math.floor(xs);
+            var xp = xs - xo; 
+            
+            for(var z = 0; z < size; z++) {
+                var zs = z / stride;
+                var zo = Math.floor(zs);
+                var zp = zs - zo;
+              
+                var iy0 = interpolate(ohm[xo][zo], ohm[xo + 1][zo], xp);
+                var iy1 = interpolate(ohm[xo][zo + 1], ohm[xo + 1][zo + 1], xp);
+                var iy = interpolate(iy0, iy1, zp);
+                
+                heightMap[x][z] += iy;
+            }
+        }
+        
+        return terrainOctave(size, octave - 1, amplitudes, seedBaseX, seedBaseZ, heightMap);
+    }
+    
+    var terrainSize = 128;
+    var terrainHeightMap = terrainOctave(terrainSize, 6, [4, 1, 1, 30, 100, 20, 5], 0, 0);
+    
+    var terrainIntensities = [];
+    var terrainVertices = [];
+    for(var x = 0, xp = -terrainSize; x < terrainSize; x++, xp+=2) {
+        for(var z = 0, zp = -terrainSize; z < terrainSize; z++, zp+=2) {
+            var yp = terrainHeightMap[x][z];
+            
+            terrainVertices.push(xp);
+            terrainVertices.push(yp);
+            terrainVertices.push(zp);
+            
+            var grass = (20 - yp) * 0.125;
+            if(grass < 0) {
+                grass = 0;
+            } else if(grass > 1) {
+                grass = 1;
+            }
+            
+            var ground = 1 - grass; 
+            
+            terrainIntensities.push(grass);
+            terrainIntensities.push(ground);
+            terrainIntensities.push(0);
+            terrainIntensities.push(0);
+        }
+    }
+    
+    
+    
+    var terrainIndices = [];
+    for(var y = 1; y < terrainSize; y++) {
+        var fx = y;
+        var tx = terrainSize * terrainSize + y;
+        for(var x = fx; x < tx; x += terrainSize) {
+            terrainIndices.push(x - 1);
+            terrainIndices.push(x);
+        }
+    }
 
-			requestAnimationFrame(drawScene);
-		}
+    var terrainVertexBuff = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, terrainVertexBuff);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(terrainVertices), gl.STATIC_DRAW);
 
-		requestAnimationFrame(drawScene);
-	}
+    var terrainIntensityBuff = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, terrainIntensityBuff);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(terrainIntensities), gl.STATIC_DRAW);
 
-	var loadShaders = function(shaderElements, allLoaded) {
+    var terrainIndexBuff = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, terrainIndexBuff);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(terrainIndices), gl.STATIC_DRAW);
+    
 
-		var shaderElement = shaderElements.pop();
-		if (shaderElement == undefined) {
-			allLoaded();
-			return;
-		}
 
-		var loader = new XMLHttpRequest();
-		loader.onload = function() {
-			shaderElement.removeAttribute("src");
-			shaderElement.innerHTML = loader.responseText;
-			loadShaders(shaderElements, allLoaded);
-		}
-		loader.onerror = loader.ontimeout = function() {
-			loadShaders(shaderElements, allLoaded);
-		}
-		loader.open("GET", shaderElement.src + '?_=' + new Date().getTime());
-		loader.send();
-	}
+    gl.enable(gl.DEPTH_TEST);
+    gl.enable(gl.CULL_FACE);
 
-	var shaderNodeList = document.querySelectorAll('*[src][type^="x-shader/"]');
-	var shadersElements = [];
-	var i;
-	for (i = 0; i < shaderNodeList.length; i++) {
-		shadersElements.push(shaderNodeList[i]);
-	}
-	loadShaders(shadersElements, glLoop);
+    function glClose() {
+        skybox.cleanup();
+        terrainShader.cleanup();
+        terrainGrassTexture.cleanup();
+        terrainGroundTexture.cleanup();
+        
+        gl.getExtension('WEBGL_lose_context').loseContext();
+        bodyElement.removeChild(glCanvasElement);
+    }
+    
+     function computeTransformation( now ) {
+
+        var translate = Matrices.translate(0, 0, -30);
+        var scale = Matrices.scale(0.25, 0.25, 0.25);
+        var rotateX = Matrices.rotateX(- Math.sin(now * 0.0001) * Math.PI/8 - Math.PI/8 );
+        var rotateY = Matrices.rotateY( now * 0.0003 );
+        
+        return new Float32Array(Matrices.multiplyList([
+          translate,
+          rotateX, 
+          rotateY, 
+          scale
+        ]));
+     }
+
+    function drawScene(now) {
+
+       
+        gl.clearColor(0, 0, 0, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPHT_BUFFER_BIT);
+        
+        var transformation = computeTransformation(now);
+
+        terrainShader.startProgram();
+        
+        gl.bindBuffer(gl.ARRAY_BUFFER, terrainVertexBuff);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, terrainIndexBuff);
+        terrainShader.setCoordsBuffer(0, 0);
+        
+        gl.bindBuffer(gl.ARRAY_BUFFER, terrainIntensityBuff);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, terrainIndexBuff);
+        terrainShader.setIntensitiesBuffer(0, 0);
+        
+        terrainShader.setTransformation(transformation);
+        
+        terrainShader.setTextures([terrainGrassTexture, terrainGroundTexture]);
+        
+        var indicesPerDraw = terrainSize * 2;
+        var offs = 0;
+        for(var offs = 0; offs < terrainIndices.length; offs += indicesPerDraw) {
+            gl.drawElements(gl.TRIANGLE_STRIP, indicesPerDraw, gl.UNSIGNED_SHORT, offs * 2);
+        }
+
+        terrainShader.setCoordsBuffer();
+        terrainShader.setIntensitiesBuffer();
+        terrainShader.stopProgram();
+
+        skybox.render(transformation);
+        
+        if(glCloseFlag) {
+            glClose();
+        } else {
+            requestAnimationFrame(drawScene);
+        }
+
+    }
+
+    requestAnimationFrame(drawScene);
 
 }

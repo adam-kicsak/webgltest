@@ -1,19 +1,46 @@
 <!DOCTYPE html>
 <html>
-	<head>
-    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <meta http-equiv="Cache-Control" content="no-cache">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta http-equiv="Cache-Control" content="no-cache">
 
-		<title>opengl izé</title>
+<title>opengl izé</title>
 
-		<script src="https://webglfundamentals.org/webgl/resources/webgl-utils.js"></script>
-		<script src="https://webglfundamentals.org/webgl/resources/m4.js"></script>
+<script type="text/javascript" src="rc4.js"></script>
+<script type="text/javascript" src="random.js"></script>
+<script type="text/javascript" src="matrices.js"></script>
+<script type="text/javascript" src="shader/shader-util.js"></script>
+
+
+<script type="x-shader/x-vertex" id="vs:skybox" src="shader/skybox/skybox.vs"></script>
+<script type="x-shader/x-fragment" id="fs:skybox" src="shader/skybox/skybox.fs"></script>
+<script type="text/javascript" src="shader/skybox/skybox.js"></script>
+
+<script type="x-shader/x-vertex" id="vs:terrain" src="shader/terrain/terrain.vs"></script>
+<script type="x-shader/x-fragment" id="fs:terrain" src="shader/terrain/terrain.fs"></script>
+<script type="text/javascript" src="shader/terrain/terrain.js"></script>
+
+<script type="text/javascript" src="main.js"></script>
+
+
+</head>
+<body onload="shaderUtil.loadDocumentShaderScriptBody(function(){ glLoop(); })">
+
+  <br>
+  <button onclick="glClose()">Close context</button>
+
+  <div id="hiddencontent" style="display: none;">
+  
+    <!--  skybox -->
+    <img id="tex:space-3d" src="texture/space-3d.png">
+    <img id="tex:daylight" src="texture/Daylight Box UV.png">
+    <img id="tex:nightdusk" src="texture/night_dusk.png">
     
-		<script type="x-shader/x-vertex" id="main-vs" src="main.vs"></script>
-		<script type="x-shader/x-fragment" id="main-fs" src="main.fs"></script>
-		<script src="main.js"></script>
-	</head>
-	<body onload="start()">
-		<canvas id="glcanv" width="500" height="500"></canvas>
-	</body>
+
+    <!-- terrain textures -->
+    <img id="tex:terrain:grass" src="texture/terrain/grass.jpg">
+    <img id="tex:terrain:ground" src="texture/terrain/ground.png">
+  </div>
+
+</body>
 </html>
