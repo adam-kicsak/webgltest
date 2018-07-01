@@ -7,6 +7,19 @@ function glClose() {
 
 function glLoop() {
 
+    function arrayOfArrays(size, init) {
+      var a = new Array(size);
+      for(var z = 0; z < size; z++) {
+          a[z] = new Array(size);
+          if(init) {
+              for(var x = 0; x < size; x++) {
+                  a[z][x] = 0;
+              }
+          }
+      }
+      return a;
+    }
+    
     var width = 800;
     var height = 480;
     
@@ -19,7 +32,7 @@ function glLoop() {
     
     
     var projection = new Float32Array(
-        Matrices.perspective(
+        Matrices.perspective( 
             Math.PI / 180 * 45,
             width / height,
             0.1,
@@ -28,6 +41,7 @@ function glLoop() {
 
 
     var gl = glCanvasElement.getContext("webgl");
+    gl.getExtension("OES_element_index_uint");
 
     var skybox = new Skybox(gl, projection, "tex:daylight");
 
@@ -35,10 +49,7 @@ function glLoop() {
     var terrainGrassTexture = gl.createTexture2DFromImageElement("tex:terrain:grass");
     var terrainGroundTexture = gl.createTexture2DFromImageElement("tex:terrain:ground");
 
-    var terrainSize = 128;
-    var terrainStrech = 2;
-    var terrainAmplitude = 16;
-    
+    var terrainSize = 512;
     
     function terrainOctave(size, octave, amplitudes, seedBaseX, seedBaseZ, heightMap) {
         
@@ -65,37 +76,26 @@ function glLoop() {
         
         var bx = seedBaseX;
         var bz = seedBaseZ;
+        
+        var ng = new NoiseGenerator(amplitude);
 
-        var ohm = arrayOfArrays(count + 1, false);
-        for(var x = 0; x < count + 1; x++) {
-            for(var z = 0; z < count + 1; z++) {
-                ohm[x][z] = smoothNoise(bx + x, bz + z) * amplitude;
+        for(var x = 0; x < size; x++) {
+            var xs = x / stride;
+            for(var z = 0; z < size; z++) {
+                var zs = z / stride;
+                heightMap[x][z] += ng.interpolatedNoise(xs, zs);
             }
         }
         
-        for(var x = 0; x < size; x++) {
-            var xs = x / stride;
-            var xo = Math.floor(xs);
-            var xp = xs - xo; 
-            
-            for(var z = 0; z < size; z++) {
-                var zs = z / stride;
-                var zo = Math.floor(zs);
-                var zp = zs - zo;
-              
-                var iy0 = interpolate(ohm[xo][zo], ohm[xo + 1][zo], xp);
-                var iy1 = interpolate(ohm[xo][zo + 1], ohm[xo + 1][zo + 1], xp);
-                var iy = interpolate(iy0, iy1, zp);
-                
-                heightMap[x][z] += iy;
-            }
-        }
+        delete ng;
         
         return terrainOctave(size, octave - 1, amplitudes, seedBaseX, seedBaseZ, heightMap);
     }
     
-    var terrainSize = 128;
-    var terrainHeightMap = terrainOctave(terrainSize, 6, [4, 1, 1, 30, 100, 20, 5], 0, 0);
+    var terrainSize = 512;
+    var terrainHeightMap = terrainOctave(terrainSize, 8, [4, 1, 1, 30, 100, 20, 5, 0, 0], 0, 0);
+    
+    var grassRandom = new Random();
     
     var terrainIntensities = [];
     var terrainVertices = [];
@@ -106,14 +106,15 @@ function glLoop() {
             terrainVertices.push(xp);
             terrainVertices.push(yp);
             terrainVertices.push(zp);
-            
-            var grass = (20 - yp) * 0.125;
-            if(grass < 0) {
-                grass = 0;
-            } else if(grass > 1) {
-                grass = 1;
+
+            var grass;
+            if(yp > 30) {
+              grass = 0;
+            } else if(yp < 20) {
+              grass = 1
+            } else {
+              grass = grassRandom.uniform();
             }
-            
             var ground = 1 - grass; 
             
             terrainIntensities.push(grass);
@@ -122,8 +123,6 @@ function glLoop() {
             terrainIntensities.push(0);
         }
     }
-    
-    
     
     var terrainIndices = [];
     for(var y = 1; y < terrainSize; y++) {
@@ -145,7 +144,7 @@ function glLoop() {
 
     var terrainIndexBuff = gl.createBuffer();
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, terrainIndexBuff);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(terrainIndices), gl.STATIC_DRAW);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(terrainIndices), gl.STATIC_DRAW);
     
 
 
@@ -202,7 +201,7 @@ function glLoop() {
         var indicesPerDraw = terrainSize * 2;
         var offs = 0;
         for(var offs = 0; offs < terrainIndices.length; offs += indicesPerDraw) {
-            gl.drawElements(gl.TRIANGLE_STRIP, indicesPerDraw, gl.UNSIGNED_SHORT, offs * 2);
+            gl.drawElements(gl.TRIANGLE_STRIP, indicesPerDraw, gl.UNSIGNED_INT, offs * 4);
         }
 
         terrainShader.setCoordsBuffer();

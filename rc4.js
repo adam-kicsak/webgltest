@@ -5,6 +5,7 @@ function RC4(seed) {
     for (var i = 0; i < 256; i++) {
         this.s[i] = i;
     }
+    var s = seed || new Date().getTime();
     this.mix(seed);
 }
 
