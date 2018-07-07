@@ -42,14 +42,12 @@ function glLoop() {
 
     var gl = glCanvasElement.getContext("webgl");
     gl.getExtension("OES_element_index_uint");
-
+    
     var skybox = new Skybox(gl, projection, "tex:daylight");
 
     var terrainShader = new TerrainShader(gl, projection);
     var terrainGrassTexture = gl.createTexture2DFromImageElement("tex:terrain:grass");
     var terrainGroundTexture = gl.createTexture2DFromImageElement("tex:terrain:ground");
-
-    var terrainSize = 512;
     
     function terrainOctave(size, octave, amplitudes, seedBaseX, seedBaseZ, heightMap) {
         
@@ -92,8 +90,10 @@ function glLoop() {
         return terrainOctave(size, octave - 1, amplitudes, seedBaseX, seedBaseZ, heightMap);
     }
     
-    var terrainSize = 512;
-    var terrainHeightMap = terrainOctave(terrainSize, 8, [4, 1, 1, 30, 100, 20, 5, 0, 0], 0, 0);
+    var terrainSize = 32;
+    var terrainHeightMap = terrainOctave(terrainSize, 4, [1, 10, 20, 10, 5], 0, 0);
+//    var terrainSize = 128;
+//    var terrainHeightMap = terrainOctave(terrainSize, 6, [4, 1, 1, 30, 100, 20, 5], 0, 0);
     
     var grassRandom = new Random();
     
@@ -182,7 +182,12 @@ function glLoop() {
         gl.clearColor(0, 0, 0, 1);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPHT_BUFFER_BIT);
         
-        var transformation = computeTransformation(now);
+        // var transformation = computeTransformation(now);
+        
+        var camera = new Camera();
+        camera.setTarget([0, 0, 0]);
+        camera.setPosition([0, 0, -100]);
+        var transformation = camera.getTransformation();
 
         terrainShader.startProgram();
         
